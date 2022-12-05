@@ -321,11 +321,11 @@ push "dhcp-option DNS 8.8.8.8"
 push "redirect-gateway def1 bypass-dhcp"
 push "sndbuf 0"
 push "rcvbuf 0"
-log /etc/openvpn/server/udpserver.log
+#log /etc/openvpn/server/udpserver.log
 status /etc/openvpn/server/udpclient.log
 status-version 2
 verb 3
-max-clients 1000
+#max-clients 1000
 duplicate-cn' > /etc/openvpn/server.conf
 
 echo '# Openvpn Configuration by Prince :)
@@ -362,11 +362,11 @@ push "dhcp-option DNS 8.8.8.8"
 push "redirect-gateway def1 bypass-dhcp"
 push "sndbuf 0"
 push "rcvbuf 0"
-log /etc/openvpn/server/tcpserver.log
+#log /etc/openvpn/server/tcpserver.log
 status /etc/openvpn/server/tcpclient.log
 status-version 2
 verb 3
-max-clients 1000
+#max-clients 1000
 duplicate-cn
 socket-flags TCP_NODELAY
 push "socket-flags TCP_NODELAY"' > /etc/openvpn/server2.conf
