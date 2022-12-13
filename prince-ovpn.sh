@@ -247,6 +247,7 @@ exit 0
 EOM
 
 chmod +x /etc/init.d/squid3
+/sbin/update-rc.d squid3 defaults
 
 cd /usr/share/squid3/errors/English/
 echo "acl IP dst $(curl -s https://api.ipify.org)
@@ -317,6 +318,8 @@ username-as-common-name
 verify-client-cert none
 script-security 3
 auth-user-pass-verify "/etc/openvpn/login/auth_vpn" via-env #
+push "persist-key"
+push "persist-tun"
 push "dhcp-option DNS 8.8.8.8"
 push "redirect-gateway def1 bypass-dhcp"
 push "sndbuf 0"
@@ -324,9 +327,7 @@ push "rcvbuf 0"
 #log /etc/openvpn/server/udpserver.log
 status /etc/openvpn/server/udpclient.log
 status-version 2
-verb 3
-#max-clients 1000
-duplicate-cn' > /etc/openvpn/server.conf
+verb 3' > /etc/openvpn/server.conf
 
 echo '# Openvpn Configuration by Prince :)
 dev tun
@@ -358,6 +359,8 @@ username-as-common-name
 verify-client-cert none
 script-security 3
 auth-user-pass-verify "/etc/openvpn/login/auth_vpn" via-env #
+push "persist-key"
+push "persist-tun"
 push "dhcp-option DNS 8.8.8.8"
 push "redirect-gateway def1 bypass-dhcp"
 push "sndbuf 0"
@@ -365,11 +368,7 @@ push "rcvbuf 0"
 #log /etc/openvpn/server/tcpserver.log
 status /etc/openvpn/server/tcpclient.log
 status-version 2
-verb 3
-#max-clients 1000
-duplicate-cn
-socket-flags TCP_NODELAY
-push "socket-flags TCP_NODELAY"' > /etc/openvpn/server2.conf
+verb 3' > /etc/openvpn/server2.conf
 
 cat <<\EOM >/etc/openvpn/login/config.sh
 #!/bin/bash
@@ -394,6 +393,27 @@ user_name=`mysql -u $USER -p$PASS -D $DB -h $HOST --skip-column-name -e "$Query"
 
 [ "$user_name" != '' ] && [ "$user_name" = "$username" ] && echo "user : $username" && echo 'authentication ok.' && exit 0 || echo 'authentication failed.'; exit 1
 EOM
+
+#client-connect file
+cat <<'PRINCE05' >/etc/openvpn/login/connect.sh
+#!/bin/bash
+
+. /etc/openvpn/login/config.sh
+
+##set status online to user connected
+server_ip=$(curl -s https://api.ipify.org)
+datenow=`date +"%Y-%m-%d %T"`
+mysql -u $USER -p$PASS -D $DB -h $HOST -e "UPDATE users SET is_active='1', device_connected='1', active_address='$server_ip', active_date='$datenow' WHERE user_name='$common_name' "
+PRINCE05
+
+#TCP client-disconnect file
+cat <<'PRINCE06' >/etc/openvpn/login/disconnect.sh
+#!/bin/bash
+
+. /etc/openvpn/login/config.sh
+
+mysql -u $USER -p$PASS -D $DB -h $HOST -e "UPDATE users SET is_active='0', active_address='', active_date='' WHERE user_name='$common_name' "
+PRINCE06
 
 cat << EOF > /etc/openvpn/easy-rsa/keys/ca.crt
 -----BEGIN CERTIFICATE-----
@@ -509,6 +529,8 @@ EOF
 
 chmod 755 /etc/openvpn/server.conf
 chmod 755 /etc/openvpn/server2.conf
+chmod 755 /etc/openvpn/login/connect.sh
+chmod 755 /etc/openvpn/login/disconnect.sh
 chmod 755 /etc/openvpn/login/config.sh
 chmod 755 /etc/openvpn/login/auth_vpn
 systemctl restart openvpn@server
@@ -603,11 +625,36 @@ echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
 echo '* soft nofile 512000
 * hard nofile 512000' >> /etc/security/limits.conf
 ulimit -n 512000
+
+/sbin/iptables -t nat -A POSTROUTING -s 10.20.0.0/22 -o eth0 -j MASQUERADE
+/sbin/iptables -t nat -A POSTROUTING -s 10.30.0.0/22 -o eth0 -j MASQUERADE
+/sbin/iptables -t nat -A POSTROUTING -s 10.20.0.0/22 -o eth0 -j SNAT --to-source "$vps_ip"
+/sbin/iptables -t nat -A POSTROUTING -s 10.30.0.0/22 -o eth0 -j SNAT --to-source "$vps_ip"
+/sbin/iptables -t nat -A POSTROUTING -s 10.20.0.0/22 -o venet0 -j MASQUERADE
+/sbin/iptables -t nat -A POSTROUTING -s 10.30.0.0/22 -o venet0 -j MASQUERADE
+/sbin/iptables -t nat -A POSTROUTING -s 10.20.0.0/22 -o venet0 -j SNAT --to-source "$vps_ip"
+/sbin/iptables -t nat -A POSTROUTING -s 10.30.0.0/22 -o venet0 -j SNAT --to-source "$vps_ip"
+/sbin/iptables -t nat -A POSTROUTING -s 10.20.0.0/22 -o ens3 -j MASQUERADE
+/sbin/iptables -t nat -A POSTROUTING -s 10.30.0.0/22 -o ens3 -j MASQUERADE
+/sbin/iptables -t nat -A POSTROUTING -s 10.20.0.0/22 -o ens3 -j SNAT --to-source "$vps_ip"
+/sbin/iptables -t nat -A POSTROUTING -s 10.30.0.0/22 -o ens3 -j SNAT --to-source "$vps_ip"
+/sbin/iptables-save > /etc/iptables_rules.v4
+/sbin/ip6tables-save > /etc/iptables_rules.v6
 iptables -t nat -A POSTROUTING -s 10.20.0.0/22 -o eth0 -j MASQUERADE
 iptables -t nat -A POSTROUTING -s 10.30.0.0/22 -o eth0 -j MASQUERADE
 iptables -t nat -A POSTROUTING -s 10.20.0.0/22 -o eth0 -j SNAT --to-source "$vps_ip"
 iptables -t nat -A POSTROUTING -s 10.30.0.0/22 -o eth0 -j SNAT --to-source "$vps_ip"
+iptables -t nat -A POSTROUTING -s 10.20.0.0/22 -o venet0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -s 10.30.0.0/22 -o venet0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -s 10.20.0.0/22 -o venet0 -j SNAT --to-source "$vps_ip"
+iptables -t nat -A POSTROUTING -s 10.30.0.0/22 -o venet0 -j SNAT --to-source "$vps_ip"
+iptables -t nat -A POSTROUTING -s 10.20.0.0/22 -o ens3 -j MASQUERADE
+iptables -t nat -A POSTROUTING -s 10.30.0.0/22 -o ens3 -j MASQUERADE
+iptables -t nat -A POSTROUTING -s 10.20.0.0/22 -o ens3 -j SNAT --to-source "$vps_ip"
+iptables -t nat -A POSTROUTING -s 10.30.0.0/22 -o ens3 -j SNAT --to-source "$vps_ip"
 iptables-save > /etc/iptables_rules.v4
+iptables-save > /etc/iptables_rules.v6
+/sbin/sysctl -p
 sysctl -p
   }&>/dev/null
 }
@@ -622,6 +669,10 @@ install_rclocal(){
 	chmod +x /etc/systemd/system/rc-local.service
     echo "#!/bin/sh -e
 iptables-restore < /etc/iptables_rules.v4
+ip6tables-restore < /etc/iptables_rules.v6
+/sbin/iptables-restore < /etc/iptables_rules.v4
+/sbin/ip6tables-restore < /etc/iptables_rules.v6
+/sbin/sysctl -p
 sysctl -p
 screen -dmS socks python /etc/ubuntu
 exit 0" >> /etc/rc.local
@@ -649,6 +700,7 @@ install_done()
   rm /root/.installer
   echo "Server will secure this server and reboot after 20 seconds"
   sleep 20
+  /sbin/reboot
 }
 
 vps_ip=$(curl -s https://api.ipify.org)
